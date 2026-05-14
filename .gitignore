@@ -1,0 +1,9 @@
+# Archivos ignorados
+target/
+.env
+*.class
+*.jar
+.idea/
+*.iml
+.vscode/
+database.sql
