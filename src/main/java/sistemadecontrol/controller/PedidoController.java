@@ -11,17 +11,24 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import sistemadecontrol.estructuras.ColaPedidos;
+import sistemadecontrol.estructuras.PilaAcciones;
+import sistemadecontrol.estructuras.Accion;
 
 // Controlador principal que conecta la vista con la logica de datos
 public class PedidoController {
     private PanelPrincipal vista;
     private PedidoDAO pedidoDAO;
     private RepartidorDAO repartidorDAO;
+    private ColaPedidos colaPendientes;
+    private PilaAcciones pilaHistorial;
 
     public PedidoController(PanelPrincipal vista) {
         this.vista = vista;
         this.pedidoDAO = new PedidoDAO();
         this.repartidorDAO = new RepartidorDAO();
+        this.colaPendientes = new ColaPedidos();
+        this.pilaHistorial = new PilaAcciones();
 
         // Conectamos cada boton con su accion
         this.vista.btnRegistrar.addActionListener(e -> registrarPedido());
@@ -29,6 +36,7 @@ public class PedidoController {
         this.vista.btnEntregado.addActionListener(e -> marcarEntregado());
         this.vista.btnBuscar.addActionListener(e -> buscarPedidos());
         this.vista.btnRefrescar.addActionListener(e -> cargarTabla());
+        this.vista.btnDeshacer.addActionListener(e -> deshacerUltimaAccion());
 
         // Enter en el campo de descripcion para registrar rapido
         this.vista.txtDescripcion.addKeyListener(new KeyAdapter() {
@@ -98,27 +106,8 @@ public class PedidoController {
         }
     }
 
-    // Asigna un repartidor al pedido seleccionado
+    // Asigna un repartidor usando la COLA DINAMICA (FIFO)
     private void asignarRepartidor() {
-        // Obtener fila seleccionada
-        int filaSeleccionada = vista.tablaPedidos.getSelectedRow();
-        if (filaSeleccionada == -1) {
-            JOptionPane.showMessageDialog(vista, "Seleccione un pedido de la tabla",
-                "Sin seleccion", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        // Obtener datos del pedido seleccionado
-        int pedidoId = (int) vista.modeloTabla.getValueAt(filaSeleccionada, 0);
-        String estadoActual = (String) vista.modeloTabla.getValueAt(filaSeleccionada, 3);
-
-        // Validamos que el pedido este PENDIENTE
-        if (!estadoActual.equals("PENDIENTE")) {
-            JOptionPane.showMessageDialog(vista, "Solo se puede asignar a pedidos PENDIENTES",
-                "Estado invalido", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
         // Validar seleccion de repartidor
         Repartidor repartidor = (Repartidor) vista.cboRepartidores.getSelectedItem();
         if (repartidor == null) {
@@ -127,9 +116,28 @@ public class PedidoController {
             return;
         }
 
+        // --- APLICACIÓN UNIDAD 3: COLAS ---
+        // Profe, aquí es donde entra la utilidad real de la cola. En lugar de permitir
+        // que el usuario asigne un repartidor a cualquier pedido al azar de la tabla,
+        // lo obligo a hacer un "desencolar()".
+        // Esto garantiza la regla de negocio FIFO: el sistema asume siempre el pedido más antiguo.
+        Pedido pedidoAtender = colaPendientes.desencolar();
+        
+        if (pedidoAtender == null) {
+            JOptionPane.showMessageDialog(vista, "La cola de pedidos esta vacia. No hay pedidos PENDIENTES.",
+                "Cola Vacia", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
         // Actualizar asignacion en BD
-        boolean exito = pedidoDAO.asignarRepartidor(pedidoId, repartidor.getId());
+        boolean exito = pedidoDAO.asignarRepartidor(pedidoAtender.getId(), repartidor.getId());
         if (exito) {
+            // --- APLICACIÓN UNIDAD 3: PUSH ---
+            // Guardamos la acción en nuestra pila por si el usuario quiere deshacerla
+            pilaHistorial.push(new Accion(pedidoAtender.getId(), "ASIGNACION"));
+            
+            JOptionPane.showMessageDialog(vista, "Pedido #" + pedidoAtender.getId() + " asignado a " + repartidor.getNombre() + "\nQuedan " + colaPendientes.getTamaño() + " en la cola.",
+                "Exito (Cola Avanzó)", JOptionPane.INFORMATION_MESSAGE);
             cargarTabla();
         }
     }
@@ -157,6 +165,37 @@ public class PedidoController {
         // Paso 3: Actualizamos el estado en la BD
         boolean exito = pedidoDAO.actualizarEstado(pedidoId, "ENTREGADO");
         if (exito) {
+            // --- APLICACIÓN UNIDAD 3: PUSH ---
+            pilaHistorial.push(new Accion(pedidoId, "ENTREGA"));
+            
+            cargarTabla();
+        }
+    }
+
+    // --- APLICACIÓN UNIDAD 3: PILAS (Deshacer LIFO) ---
+    private void deshacerUltimaAccion() {
+        // Profe, aquí saco el último registro que se hizo (POP)
+        Accion ultimaAccion = pilaHistorial.pop();
+
+        if (ultimaAccion == null) {
+            JOptionPane.showMessageDialog(vista, "No hay acciones recientes en el historial.",
+                "Pila Vacía", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        boolean exito = false;
+        // Si lo último fue una ASIGNACIÓN, la revierto (lo pongo PENDIENTE de nuevo)
+        if (ultimaAccion.getTipoAccion().equals("ASIGNACION")) {
+            exito = pedidoDAO.deshacerAsignacion(ultimaAccion.getPedidoId());
+        } 
+        // Si lo último fue marcar ENTREGADO, lo regreso a EN_CAMINO
+        else if (ultimaAccion.getTipoAccion().equals("ENTREGA")) {
+            exito = pedidoDAO.actualizarEstado(ultimaAccion.getPedidoId(), "EN_CAMINO");
+        }
+
+        if (exito) {
+            JOptionPane.showMessageDialog(vista, "Se deshizo la última acción: " + ultimaAccion.getTipoAccion() + ".",
+                "Deshacer (Pila POP)", JOptionPane.INFORMATION_MESSAGE);
             cargarTabla();
         }
     }
@@ -199,9 +238,21 @@ public class PedidoController {
         }
     }
 
-    // Carga todos los pedidos de la BD a la tabla
+    // Carga todos los pedidos de la BD a la tabla y reconstruye la cola
     private void cargarTabla() {
         ArrayList<Pedido> pedidos = pedidoDAO.listarPedidos();
+        
+        // --- APLICACIÓN UNIDAD 3: LLENADO DE LA COLA ---
+        // Aquí construyo mi Cola Dinámica basándome en los datos frescos de la BD.
+        // La lista 'pedidos' viene con los más antiguos al principio (ASC). 
+        // Por tanto, recorro la lista normalmente y los voy encolando (FIFO).
+        colaPendientes = new ColaPedidos();
+        for (Pedido p : pedidos) {
+            if (p.getEstado().equals("PENDIENTE")) {
+                colaPendientes.encolar(p); // Encolar() lo manda al final de la fila
+            }
+        }
+        
         llenarTabla(pedidos);
     }
 

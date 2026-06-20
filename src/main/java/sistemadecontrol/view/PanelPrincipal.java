@@ -28,6 +28,7 @@ public class PanelPrincipal extends JFrame {
     public JTextField txtBuscar;
     public JButton btnBuscar;
     public JButton btnRefrescar;
+    public JButton btnDeshacer;
 
     // --- Barra de estado ---
     public JLabel lblEstado;
@@ -178,7 +179,7 @@ public class PanelPrincipal extends JFrame {
         cboRepartidores.setPreferredSize(new Dimension(160, 28));
         panelAcciones.add(cboRepartidores);
 
-        // Boton asignar
+        // Boton asignar (Internamente usa la Cola)
         btnAsignar = new JButton("Asignar");
         btnAsignar.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnAsignar.setBackground(new Color(70, 130, 180));
@@ -195,6 +196,15 @@ public class PanelPrincipal extends JFrame {
         btnEntregado.setFocusPainted(false);
         btnEntregado.setCursor(new Cursor(Cursor.HAND_CURSOR));
         panelAcciones.add(btnEntregado);
+
+        // Boton Deshacer (Pila)
+        btnDeshacer = new JButton("Deshacer (Pila)");
+        btnDeshacer.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnDeshacer.setBackground(new Color(220, 53, 69)); // Rojo
+        btnDeshacer.setForeground(Color.WHITE);
+        btnDeshacer.setFocusPainted(false);
+        btnDeshacer.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        panelAcciones.add(btnDeshacer);
 
         // Separador visual
         panelAcciones.add(new JLabel("    |   "));
