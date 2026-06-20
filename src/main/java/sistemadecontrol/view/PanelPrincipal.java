@@ -201,7 +201,7 @@ public class PanelPrincipal extends JFrame {
         btnDeshacer = new JButton("Deshacer (Pila)");
         btnDeshacer.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnDeshacer.setBackground(new Color(220, 53, 69)); // Rojo
-        btnDeshacer.setForeground(Color.WHITE);
+        btnDeshacer.setForeground(Color.BLACK);
         btnDeshacer.setFocusPainted(false);
         btnDeshacer.setCursor(new Cursor(Cursor.HAND_CURSOR));
         panelAcciones.add(btnDeshacer);
